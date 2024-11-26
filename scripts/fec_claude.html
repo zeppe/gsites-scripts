@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>FEC Charge Calculator</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            max-width: 900px;
+            margin: 0 auto;
+            padding: 20px;
+            line-height: 1.6;
+        }
+        label {
+            display: block;
+            margin-top: 10px;
+        }
+        input, button {
+            width: 100%;
+            padding: 10px;
+            margin-top: 5px;
+        }
+        #results {
+            margin-top: 20px;
+            border: 1px solid #ddd;
+            padding: 15px;
+            background-color: #f9f9f9;
+        }
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            margin-top: 10px;
+        }
+        th, td {
+            border: 1px solid #ddd;
+            padding: 8px;
+            text-align: right;
+        }
+        th {
+            background-color: #f2f2f2;
+        }
+        .positive-diff {
+            background-color: #ffcccc;
+            font-weight: bold;
+        }
+        .negative-diff {
+            background-color: #ccffcc;
+        }
+    </style>
+</head>
+<body>
+    <h1>FEC Charge Calculator</h1>
+    <form id="fecCalculator">
+        <label for="initialCharge">Initial FEC Charge (£):</label>
+        <input type="number" id="initialCharge" required step="0.01" min="0" value="1159">
+        
+        <label for="startYear">Start Year:</label>
+        <input type="number" id="startYear" required min="2015" max="2024" value="2020">
+        
+        <label for="endYear">End Year:</label>
+        <input type="number" id="endYear" required min="2016" max="2024" value="2024">
+        
+        <label for="rnrAsk">R&R Ask (£):</label>
+        <input type="number" id="rnrAsk" required step="0.01" min="0" value="1660">
+
+        <button type="submit">Calculate FEC Charges</button>
+    </form>
+
+    <div id="results" style="display: none;">
+        <h2>Calculation Results</h2>
+        <table id="resultsTable">
+            <thead>
+                <tr>
+                    <th>Year</th>
+                    <th>RPI Value<br>(march prev year)</th>
+                    <th>RPI % Change</th>
+                    <th>FEC Charge (£)</th>
+                    <th>FEC Charge Rounded (£)</th>
+                </tr>
+            </thead>
+            <tbody id="resultsBody"></tbody>
+        </table>
+        <p>Total Final FEC Charge: <span id="totalFinalCharge"></span></p>
+        <p>Total Final Rounded Charge: <span id="totalRoundedCharge"></span></p>
+        <p>Admin Fee: <span id="adminFee"></span></p>
+        <p>Charge Plus Fee: <span id="chargePlusFee"></span></p>
+        <p>R&R Ask: <span id="rnrAskOut"></span></p>
+        <p>Difference: <span id="rnrDiff"></span> <i>(in red if overcharged)</i></p>
+    </div>
+
+    <script>
+        // Embedded RPI data
+        const rpiData = [
+            { y: 2016, v: 257.1 },
+            { y: 2017, v: 261.1 },
+            { y: 2018, v: 269.3 },
+            { y: 2019, v: 278.3 },
+            { y: 2020, v: 285.1 },
+            { y: 2021, v: 292.6 },
+            { y: 2022, v: 296.9 },
+            { y: 2023, v: 323.5 },
+            { y: 2024, v: 367.2 },
+            { y: 2025, v: 383.0 },
+        ];
+
+        const adminFees = 0.05; // 5%
+
+        // Function to get URL parameters
+        function getUrlParameter(name) {
+            name = name.replace(/[\[]/, '\\[').replace(/[\]]/, '\\]');
+            const regex = new RegExp('[\\?&]' + name + '=([^&#]*)');
+            const results = regex.exec(location.search);
+            return results === null ? '' : decodeURIComponent(results[1]);
+        }
+
+        // Initialize form with URL parameters if present
+        window.addEventListener('load', function() {
+            const initialCharge = getUrlParameter('initialCharge');
+            const startYear = getUrlParameter('startYear');
+            const endYear = getUrlParameter('endYear');
+            const rnrAsk = getUrlParameter('rnrAsk');
+
+            if (initialCharge) document.getElementById('initialCharge').value = initialCharge;
+            if (startYear) document.getElementById('startYear').value = startYear;
+            if (endYear) document.getElementById('endYear').value = endYear;
+            if (rnrAsk) document.getElementById('rnrAsk').value = rnrAsk;
+        });
+
+        document.getElementById('fecCalculator').addEventListener('submit', function(e) {
+            e.preventDefault();
+            
+            // Get input values
+            const initialCharge = parseFloat(document.getElementById('initialCharge').value);
+            const startYear = parseInt(document.getElementById('startYear').value);
+            const endYear = parseInt(document.getElementById('endYear').value);
+            const rnrAsk = parseFloat(document.getElementById('rnrAsk').value);
+            
+            // Validate input years
+            const filteredRPIData = rpiData.filter(item => 
+                item.y >= startYear && item.y <= endYear
+            );
+            
+            if (filteredRPIData.length < 1) {
+                alert('No RPI data available for the selected year range.');
+                return;
+            }
+            
+            // Calculate FEC charges
+            const resultsBody = document.getElementById('resultsBody');
+            resultsBody.innerHTML = ''; // Clear previous results
+            
+            let currentCharge = initialCharge;
+            let currentRoundedCharge = Math.round(initialCharge / 10) * 10;
+            
+            for (let i = 0; i < filteredRPIData.length; i++) {
+                const yearData = filteredRPIData[i];
+                
+                // Create a row for each year
+                const row = document.createElement('tr');
+                
+                // Year column
+                const yearCell = document.createElement('td');
+                yearCell.textContent = yearData.y;
+                row.appendChild(yearCell);
+                
+                // RPI Value column
+                const rpiValueCell = document.createElement('td');
+                rpiValueCell.textContent = yearData.v.toFixed(1);
+                row.appendChild(rpiValueCell);
+                
+                // RPI % Change column
+                const rpiChangeCell = document.createElement('td');
+                let rpiChangePercentage = 0;
+                
+                // Calculate RPI change using previous index
+                if (i > 0) {
+                    const previousYearRPIValue = rpiData.find(item => item.y === yearData.y - 1).v;
+                    rpiChangePercentage = ((yearData.v - previousYearRPIValue) / previousYearRPIValue) * 100;
+                    
+                    // Adjust charge using RPI change percentage
+                    currentCharge *= (1 + rpiChangePercentage / 100);
+                    currentRoundedCharge = Math.round(currentCharge / 10) * 10;
+                }
+                
+                rpiChangeCell.textContent = rpiChangePercentage.toFixed(2) + '%';
+                row.appendChild(rpiChangeCell);
+                
+                // Charge column
+                const chargeCell = document.createElement('td');
+                chargeCell.textContent = '£' + currentCharge.toFixed(2);
+                row.appendChild(chargeCell);
+                
+                // Rounded Charge column
+                const roundedChargeCell = document.createElement('td');
+                roundedChargeCell.textContent = '£' + currentRoundedCharge.toFixed(0);
+                row.appendChild(roundedChargeCell);
+                
+                resultsBody.appendChild(row);
+            }
+            
+            // Calculate difference
+            const difference = rnrAsk - currentRoundedCharge;
+            
+            // Display total final charges
+            document.getElementById('totalFinalCharge').textContent = 
+                `£${currentCharge.toFixed(2)}`;
+            document.getElementById('totalRoundedCharge').textContent = 
+                `£${currentRoundedCharge.toFixed(0)}`;
+            document.getElementById('adminFee').textContent = 
+                `£${(currentRoundedCharge * adminFees).toFixed(2)}`;
+            document.getElementById('chargePlusFee').textContent = 
+                `£${(currentRoundedCharge * (1+adminFees)).toFixed(2)}`;
+            document.getElementById('rnrAskOut').textContent = 
+                `£${(rnrAsk).toFixed(2)}`;
+            
+            // Style and display difference
+            const rnrDiffElement = document.getElementById('rnrDiff');
+            rnrDiffElement.textContent = `£${difference.toFixed(2)}`;
+            rnrDiffElement.className = difference > 0 ? 'positive-diff' : 'negative-diff';
+            
+            // Show results
+            document.getElementById('results').style.display = 'block';
+
+            // Optional: Update URL with current parameters
+            const urlParams = new URLSearchParams({
+                initialCharge: document.getElementById('initialCharge').value,
+                startYear: document.getElementById('startYear').value,
+                endYear: document.getElementById('endYear').value,
+                rnrAsk: document.getElementById('rnrAsk').value,
+            });
+            window.history.replaceState({}, '', `?${urlParams.toString()}`);
+        });
+    </script>
+</body>
+</html>

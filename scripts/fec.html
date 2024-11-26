@@ -1,0 +1,196 @@
+<html>
+  <head>
+  <link
+    rel="stylesheet"
+    href="https://cdn.jsdelivr.net/npm/purecss@3.0.0/build/pure-min.css"
+    integrity="sha384-X38yfunGUhNzHpBaEBsWLO+A0HDYOQi8ufWDkZ0k9e0eXz/tH3II7uKZ9msv++Ls"
+    crossorigin="anonymous"
+  />
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+</head>
+  <body>
+    <form id="calculate_fec" class="pure-form">
+      <fieldset>
+        <legend>FEC calculation parameters</legend>
+
+        <p>
+          <label for="lease_date">Lease Date:</label>
+          <input
+            type="number"
+            value="2020"
+            min="2016"
+            max="2024"
+            id="lease_date"
+            name="lease_date"
+          />
+        </p>
+
+        <p>
+          <label for="base_fec"
+            >Base Queen Elizabeth Fixed Estate Charge:</label
+          >
+          <input
+            type="number"
+            value="1159"
+            step="0.01"
+            id="base_fec"
+            name="base_fec"
+          />
+        </p>
+
+        <p>
+          <label for="ask_rnr">R&R demand (excl admin fee):</label>
+          <input
+            type="number"
+            value="1600"
+            step="0.01"
+            id="ask_rnr"
+            name="ask_rnr"
+          />
+        </p>
+
+        <input type="submit" value="Submit" />
+      </fieldset>
+    </form>
+
+    <table class="pure-table">
+      <tr>
+        <td>Correct FEC demand for 2024</td>
+        <td><div id="out_fec_demand"></div></td>
+        <td></td>
+      </tr>
+      <tr>
+        <td>FEC Rounded</td>
+        <td><div id="out_fec_rounded"></div></td>
+        <td>Lease allows for rounding to the nearest £10, up or down</td>
+      </tr>
+      <tr>
+        <td>R&R demand (excl admin fee)</td>
+        <td><div id="out_rnr_demand"></div></td>
+        <td>Take this from your R&R demand - this is a rounded number</td>
+      </tr>
+      <tr>
+        <td>Difference (+ve means overcharge)</td>
+        <td><div id="out_fec_diff"></div></td>
+        <td>Red means you are overcharged</td>
+      </tr>
+      <tr>
+        <td>Admin Fee</td>
+        <td><div id="out_admin_fee"></div></td>
+        <td></td>
+      </tr>
+      <tr>
+        <td>Total FEC for 2024 incl admin fee</td>
+        <td><div id="out_fec_plus_fees"></div></td>
+        <td>R&R demand should reflect this number as your total</td>
+      </tr>
+    </table>
+
+    <h3>Breakdown</h3>
+
+    <div id="out_table"></div>
+
+    <script>
+      function fetch_input(form) {
+        return {
+          lease_date: form["lease_date"].valueAsNumber,
+          base_fec: form["base_fec"].valueAsNumber,
+          ask_rnr: form["ask_rnr"].valueAsNumber,
+        };
+      }
+
+      function calculate_fec(input) {
+        const admin_fees = 0.05;
+        const rpi_march = [
+          { y: 2015, v: 257.1 },
+          { y: 2016, v: 261.1 },
+          { y: 2017, v: 269.3 },
+          { y: 2018, v: 278.3 },
+          { y: 2019, v: 285.1 },
+          { y: 2020, v: 292.6 },
+          { y: 2021, v: 296.9 },
+          { y: 2022, v: 323.5 },
+          { y: 2023, v: 367.2 },
+          // { y: 2024, v: 383.0 },
+        ];
+        const increases = rpi_march.map((x, i) => {
+          return { y: x.y, v: x.v, inc: i ? x.v / rpi_march[i - 1].v : 1 };
+        });
+        const fec = [
+          {
+            y: input.lease_date,
+            v: input.base_fec,
+            v_round: input.base_fec,
+            inc: 1,
+          },
+        ];
+        increases
+          .filter((v) => v.y >= input.lease_date)
+          .forEach((x, i) => {
+            const base = fec[i].v;
+            fec.push({
+              y: x.y + 1,
+              v: base * x.inc,
+              v_round: Math.round((base * x.inc) / 10) * 10,
+              inc: x.inc,
+            });
+          });
+
+        const last = fec[fec.length - 1];
+        return {
+          fec_table: fec,
+          fec_last: last.v,
+          fec_rounded: last.v_round,
+          ask_rnr: input.ask_rnr,
+          ask_diff: input.ask_rnr - last.v_round,
+          admin_fee: last.v_round * admin_fees,
+          fec_plus_fees: last.v_round * (1 + admin_fees),
+        };
+      }
+
+      function render_output(output) {
+        let GBP = new Intl.NumberFormat("en-GB", {
+          style: "currency",
+          currency: "GBP",
+        });
+        const out_fec_demand = document.getElementById("out_fec_demand");
+        const out_fec_rounded = document.getElementById("out_fec_rounded");
+        const out_rnr_demand = document.getElementById("out_rnr_demand");
+        const out_fec_diff = document.getElementById("out_fec_diff");
+        const out_admin_fee = document.getElementById("out_admin_fee");
+        const out_fec_plus_fees = document.getElementById("out_fec_plus_fees");
+        const out_table = document.getElementById("out_table");
+
+        out_fec_demand.innerHTML = GBP.format(output.fec_last);
+        out_fec_rounded.innerHTML = GBP.format(output.fec_rounded);
+        out_rnr_demand.innerHTML = GBP.format(output.ask_rnr);
+        out_fec_diff.innerHTML = GBP.format(output.ask_diff);
+        out_admin_fee.innerHTML = GBP.format(output.admin_fee);
+        out_fec_plus_fees.innerHTML = GBP.format(output.fec_plus_fees);
+
+        const table_code =
+          output.fec_table.reduce(
+            (acc, el) =>
+              (acc +=
+                "<tr><td>" +
+                el.y +
+                "</td><td>" +
+                GBP.format(el.v) +
+                "</td><td>" +
+                GBP.format(el.v_round) +
+                "</td></tr>"),
+            "<table class='pure-table'><tr><th>Year</th><th>FEC</th><th>FEC rounded</th></tr>"
+          ) + "</table>";
+        out_table.innerHTML = table_code;
+      }
+
+      const form = document.getElementById("calculate_fec");
+      form.addEventListener("submit", (event) => {
+        event.preventDefault(); // Prevents the default form submission
+        const input = fetch_input(form);
+        const output = calculate_fec(input);
+        render_output(output);
+      });
+    </script>
+  </body>
+</html>
